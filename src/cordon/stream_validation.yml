@@ -1,0 +1,298 @@
+# What the workflow currently enforces
+# - PR targets development.
+# - Source branch ends in -main.
+# - srm.yml exists and conforms to the shared schema.
+# - Duplicate YAML keys are rejected.
+# - Manifest aspects exactly match .gitmodules paths.
+# - Every declared aspect directory exists.
+# - Each selected commit is a gitlink in the candidate tree.
+# - Each gitlink commit has a valid signed maturity attestation.
+# - The attestation identifies the gitlink commit and declares mature: true.
+# - Exactly one unambiguous maturity tag is declared for each gitlink commit.
+# - The referenced GitHub Release has a valid immutable-release attestation.
+# - The release tag resolves to the exact gitlink commit.
+# - Release assets are not validated or published by this workflow.
+
+name: Stream Validation
+
+on:
+  pull_request:
+    branches:
+      - development
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  validate-stream:
+    name: Validate Stream
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate source branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" == *-main ]]; then
+            echo "Allowed: '$HEAD_REF' ends in -main."
+          else
+            echo "::error::Rejected: '$HEAD_REF' must end in -main."
+            exit 1
+          fi
+
+      - name: Check out candidate tree
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Check out shared schema
+        uses: actions/checkout@v4
+        with:
+          repository: amiasea/enterprise
+          ref: main
+          path: .schema-source
+          sparse-checkout: |
+            solutions/srm.schema.json
+          sparse-checkout-cone-mode: false
+
+      - name: Install validators
+        run: python -m pip install PyYAML jsonschema
+
+      - name: Validate srm.yml against schema
+        run: |
+          python - <<'PY'
+          import json
+          import yaml
+          from pathlib import Path
+          from jsonschema import Draft202012Validator
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_mapping(loader, node, deep=False):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise ValueError(f"Duplicate YAML key: {key!r}")
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_mapping,
+          )
+
+          manifest_path = Path("srm.yml")
+          schema_path = Path(".schema-source/solutions/srm.schema.json")
+
+          if not manifest_path.is_file():
+              raise SystemExit("ERROR: srm.yml is missing.")
+
+          if not schema_path.is_file():
+              raise SystemExit(f"ERROR: Schema not found: {schema_path}")
+
+          try:
+              manifest = yaml.load(
+                  manifest_path.read_text(encoding="utf-8"),
+                  Loader=UniqueKeyLoader,
+              )
+              schema = json.loads(schema_path.read_text(encoding="utf-8"))
+          except Exception as exc:
+              raise SystemExit(
+                  f"ERROR: Unable to parse manifest or schema: {exc}"
+              )
+
+          errors = sorted(
+              Draft202012Validator(schema).iter_errors(manifest),
+              key=lambda error: list(map(str, error.absolute_path)),
+          )
+
+          if errors:
+              for error in errors:
+                  path = ".".join(map(str, error.absolute_path)) or "<root>"
+                  print(f"ERROR: {path}: {error.message}")
+              raise SystemExit(1)
+
+          print("srm.yml conforms to the shared schema.")
+          PY
+
+      - name: Validate srm.yml against .gitmodules and directories
+        run: |
+          python - <<'PY'
+          import subprocess
+          import yaml
+          from pathlib import Path
+
+          manifest = yaml.safe_load(
+              Path("srm.yml").read_text(encoding="utf-8")
+          )
+          declared = set(manifest["aspects"])
+
+          gitmodules = Path(".gitmodules")
+          if not gitmodules.is_file():
+              raise SystemExit("ERROR: .gitmodules is missing.")
+
+          result = subprocess.run(
+              [
+                  "git", "config", "--file", ".gitmodules",
+                  "--get-regexp", r"^submodule\..*\.path$",
+              ],
+              text=True,
+              capture_output=True,
+          )
+
+          if result.returncode not in (0, 1):
+              raise SystemExit(
+                  f"ERROR: Unable to read .gitmodules: {result.stderr}"
+              )
+
+          configured = set()
+          for line in result.stdout.splitlines():
+              _, path = line.split(None, 1)
+              configured.add(path.strip())
+
+          if declared != configured:
+              missing = sorted(declared - configured)
+              extra = sorted(configured - declared)
+
+              if missing:
+                  print(f"ERROR: Aspects missing from .gitmodules: {missing}")
+              if extra:
+                  print(f"ERROR: Undeclared submodule paths: {extra}")
+
+              raise SystemExit(1)
+
+          missing_dirs = sorted(
+              path for path in declared
+              if not Path(path).is_dir()
+          )
+
+          if missing_dirs:
+              raise SystemExit(
+                  f"ERROR: Declared aspect directories missing: {missing_dirs}"
+              )
+
+          print(
+              "srm.yml aspects match .gitmodules "
+              "and their directories exist."
+          )
+          PY
+
+      - name: Validate aspect maturity attestations
+        env:
+          GH_TOKEN: ${{ secrets.SUPERPROJECT_READ_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          predicate_type="https://amiasea.com/attestations/maturity/v1"
+          subject_file=$(mktemp)
+          trap 'rm -f "$subject_file" attest.err release.err' EXIT
+
+          paths=$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$') || {
+            echo "::error::Unable to read submodule paths from .gitmodules."
+            exit 1
+          }
+
+          if [[ -z "$paths" ]]; then
+            echo "::warning::No submodules found in .gitmodules; nothing to validate."
+            exit 0
+          fi
+
+          while read -r key path; do
+            name="${key#submodule.}"
+            name="${name%.path}"
+            url=$(git config -f .gitmodules --get "submodule.$name.url")
+
+            case "$url" in
+              https://github.com/*)   repository="${url#https://github.com/}" ;;
+              http://github.com/*)    repository="${url#http://github.com/}" ;;
+              ssh://git@github.com/*) repository="${url#ssh://git@github.com/}" ;;
+              git@github.com:*)       repository="${url#git@github.com:}" ;;
+              *)
+                echo "::error::$path: unsupported GitHub URL: $url"
+                exit 1
+                ;;
+            esac
+
+            repository="${repository%.git}"
+            repository="${repository%/}"
+
+            if [[ ! "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::$path: invalid repository slug: $repository"
+              exit 1
+            fi
+
+            commit_sha=$(git ls-tree HEAD -- "$path" |
+              awk '$1 == "160000" && $2 == "commit" { print $3 }')
+
+            if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::$path: expected a 40-character gitlink SHA, got '${commit_sha:-empty}'."
+              exit 1
+            fi
+
+            printf '%s' "$commit_sha" > "$subject_file"
+            echo "Checking $path -> $repository @ $commit_sha"
+
+            if ! attest_json=$(gh attestation verify "$subject_file" \
+              --repo "$repository" \
+              --predicate-type "$predicate_type" \
+              --format json 2>attest.err); then
+              echo "::error::$path: maturity attestation verification failed for $repository@$commit_sha"
+              cat attest.err >&2
+              exit 1
+            fi
+
+            tag=$(jq -er --arg commit "$commit_sha" '
+              [
+                .. | objects
+                | select(has("predicate") and (.predicate | type) == "object")
+                | .predicate
+                | select(.commit == $commit)
+                | select(.mature == true)
+                | select((.tag | type) == "string" and (.tag | length) > 0)
+                | .tag
+              ] | unique
+              | if length == 1 then .[0]
+                elif length == 0 then error("no matching maturity predicate for commit")
+                else error("ambiguous maturity tags: " + join(", "))
+                end
+            ' <<< "$attest_json")
+
+            if ! gh release verify "$tag" --repo "$repository" 2>release.err; then
+              echo "::error::$path: release verification failed for $repository@$tag"
+              cat release.err >&2
+              exit 1
+            fi
+
+            encoded_tag=$(jq -rn --arg tag "$tag" '$tag | @uri')
+            ref_json=$(gh api "repos/$repository/git/ref/tags/$encoded_tag")
+            object_type=$(jq -er '.object.type' <<< "$ref_json")
+            object_sha=$(jq -er '.object.sha' <<< "$ref_json")
+
+            if [[ "$object_type" == "commit" ]]; then
+              resolved="$object_sha"
+            elif [[ "$object_type" == "tag" ]]; then
+              resolved=$(gh api "repos/$repository/git/tags/$object_sha" --jq '.object.sha')
+            else
+              echo "::error::$path: unexpected tag object type '$object_type' for $tag"
+              exit 1
+            fi
+
+            if [[ "$resolved" != "$commit_sha" ]]; then
+              echo "::error::$path: tag $tag resolves to $resolved, expected gitlink $commit_sha"
+              exit 1
+            fi
+
+            echo "PASS: $path @ $commit_sha is mature via $repository release $tag"
+          done <<< "$paths"
+
+          echo "All aspect maturity attestations are valid."

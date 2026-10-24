@@ -1,0 +1,31 @@
+
+{
+  "streams": [
+    "cerberus",
+    "achilles"
+  ],
+  "cordons": {
+    "testing": {
+      "tier": null,
+      "leaves": {
+        "host-api": {
+          "options": {
+            "cerberus": "gamma",
+            "achilles": "delta"
+          }
+        }
+      }
+    },
+    "endpoint": {
+      "tier": "testing",
+      "leaves": {
+        "core": {
+          "options": {
+            "cerberus": "gamma",
+            "achilles": "delta"
+          }
+        }
+      }
+    }
+  }
+}
