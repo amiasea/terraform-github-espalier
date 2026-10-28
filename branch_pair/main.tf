@@ -7,5 +7,9 @@ resource "github_branch" "source" {
 resource "github_branch" "derived" {
   repository    = var.repository_name
   branch        = var.derived_branch
-  source_branch = github_branch.source.branch
+  source_branch = var.source_branch
+
+  depends_on = [
+    github_branch.source
+  ]
 }

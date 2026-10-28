@@ -5,10 +5,5 @@ module "aspect_option_branch_pairs" {
   repository_name = github_repository.this.name
   source_branch   = "${each.value}-main"
   derived_branch  = "${each.value}-development"
-  seed_sha        = data.external.stream_seed.result.sha
-
-  depends_on = [
-    github_branch.source,
-    data.external.stream_seed
-  ]
+  seed_sha        = github_branch.source.sha
 }

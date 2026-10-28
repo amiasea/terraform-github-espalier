@@ -1,6 +1,6 @@
-module "cordons" {
+module "cordon" {
   source   = "./cordon"
-  for_each = local.cordons
+  for_each = var.pomology.cordons
 
   repo_visibility  = var.repo_visibility
   repo_name_prefix = var.repo_name_prefix

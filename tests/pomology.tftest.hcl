@@ -1,0 +1,32 @@
+run "pomology" {
+  command = apply
+
+  variables {
+    pomology = jsondecode(file("${path.module}/tests/pomology.json"))
+  }
+
+  assert {
+    condition = (
+      length(output.variety_cordon_subjects) == length(var.pomology.cordons) &&
+      alltrue([
+        for cordon_name, result in output.variety_cordon_subjects :
+        result.cordon.name == cordon_name &&
+        result.cordon.repository_name != "" &&
+        result.cordon.repository_node_id != "" &&
+        length(result.varieties) == length(var.pomology.varieties) &&
+        alltrue([
+          for variety_name in var.pomology.varieties :
+          contains(keys(result.varieties), variety_name) &&
+          alltrue([
+            for leaf_name, leaf in result.varieties[variety_name].leaves :
+            leaf.repository_name != "" &&
+            leaf.repository_node_id != "" &&
+            leaf.option == var.pomology.cordons[cordon_name].leaves[leaf_name].options[variety_name]
+          ])
+        ])
+      ])
+    )
+
+    error_message = "Each Cordon must expose its repository name and node ID, every declared variety, and each leaf's repository name, node ID, and correct selected option."
+  }
+}

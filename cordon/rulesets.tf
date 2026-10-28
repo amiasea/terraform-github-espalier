@@ -8,7 +8,6 @@ resource "github_repository_ruleset" "main" {
     ref_name {
       include = [
         "refs/heads/main",
-        "refs/heads/*-main",
       ]
       exclude = []
     }
@@ -27,10 +26,6 @@ resource "github_repository_ruleset" "main" {
       require_last_push_approval      = false
     }
   }
-
-  depends_on = [
-    github_repository_file.stream_validation,
-  ]
 }
 
 resource "github_repository_ruleset" "development" {
@@ -43,7 +38,6 @@ resource "github_repository_ruleset" "development" {
     ref_name {
       include = [
         "refs/heads/development",
-        "refs/heads/*-development",
       ]
       exclude = []
     }

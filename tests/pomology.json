@@ -1,8 +1,11 @@
-
 {
-  "streams": [
+  "varieties": [
     "cerberus",
     "achilles"
+  ],
+  "aspectOptions": [
+    "gamma",
+    "delta"
   ],
   "cordons": {
     "testing": {

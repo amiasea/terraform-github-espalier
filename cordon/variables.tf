@@ -9,12 +9,12 @@ variable "repo_name" {
 }
 
 variable "leaves" {
-  description = "Direct leaf aspects and their available option codenames."
+  description = "Direct leaf aspects and their variety-to-option mappings."
+
   type = map(object({
-    options = list(string)
+    options = map(string)
   }))
 }
-
 variable "repo_visibility" {
   description = "Repository visibility"
   type = string
