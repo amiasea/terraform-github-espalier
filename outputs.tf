@@ -1,4 +1,4 @@
-output "variety_cordon_subjects" {
+output "variety_cordon_repositories" {
   value = {
     for cordon_name, cordon in module.cordon :
     cordon_name => {
@@ -22,5 +22,12 @@ output "variety_cordon_subjects" {
         }
       }
     }
+  }
+}
+
+output "organization" {
+  value = {
+    id = data.github_organization.amiasea.id
+    name = data.github_organization.amiasea.name
   }
 }

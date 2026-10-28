@@ -7,9 +7,9 @@ run "pomology" {
 
   assert {
     condition = (
-      length(output.variety_cordon_subjects) == length(var.pomology.cordons) &&
+      length(output.variety_cordon_repositories) == length(var.pomology.cordons) &&
       alltrue([
-        for cordon_name, result in output.variety_cordon_subjects :
+        for cordon_name, result in output.variety_cordon_repositories :
         result.cordon.name == cordon_name &&
         result.cordon.repository_name != "" &&
         result.cordon.repository_node_id != "" &&
