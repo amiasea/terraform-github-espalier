@@ -2,7 +2,9 @@ run "pomology" {
   command = apply
 
   variables {
-    pomology = jsondecode(file("${path.module}/tests/pomology.json"))
+    repo_name_prefix = "test"
+    
+    pomology = jsondecode(file("tests/pomology.json"))
   }
 
   assert {
