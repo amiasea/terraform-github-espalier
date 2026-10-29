@@ -1,5 +1,5 @@
 provider "github" {
-  owner = "amiasea-development"
+  owner = var.github_organization_name
 
   app_auth {}
 }
