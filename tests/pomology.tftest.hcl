@@ -10,6 +10,8 @@ run "pomology" {
   variables {
     github_organization_name = "amiasea-development"
 
+    github_app_id = "5476448"
+
     repo_name_prefix = "test"
 
     pomology = jsondecode(file("tests/pomology.json"))
