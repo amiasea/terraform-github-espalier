@@ -16,6 +16,8 @@ variable "github_app_id" {
 
 variable "pomology" {
   type = object({
+    varieties = list(string)
+
     cordons = map(object({
       tier = string
       leaves = map(object({
