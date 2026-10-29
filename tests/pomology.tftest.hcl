@@ -17,7 +17,9 @@ run "pomology" {
   variables {
     repo_name_prefix = "test"
 
-    pomology = jsondecode(file("tests/pomology.json"))
+    pomology = {
+      cordons = jsondecode(file("tests/pomology.json")).cordons
+    }
   }
 
   assert {
