@@ -1,3 +1,8 @@
+variable "github_organization_name" {
+  description = "Name of the GitHub Organization"
+  type = string
+}
+
 variable "repo_name_prefix" {
   description = "Prefix applied to every managed repository name."
   type        = string

@@ -9,6 +9,6 @@ module "cordon" {
   github_app_id    = var.github_app_id
 }
 
-data "github_organization" "amiasea" {
-  name = "amiasea"
+data "github_organization" "this" {
+  name = var.github_organization_name
 }
