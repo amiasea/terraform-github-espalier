@@ -15,6 +15,8 @@ run "pomology" {
   command = apply
 
   variables {
+    github_organization_name = "amiasea-development"
+
     repo_name_prefix = "test"
 
     pomology = jsondecode(file("tests/pomology.json"))
